@@ -57,6 +57,10 @@ namespace CodeCracker.CSharp.Refactoring
             {
                 return;
             }
+            if (methodDeclaration.Modifiers.Any(SyntaxKind.AsyncKeyword))
+            {
+                return;
+            }
 
             var diagnostic = Diagnostic.Create(Rule, methodDeclaration.GetLocation());
 
@@ -69,6 +73,8 @@ namespace CodeCracker.CSharp.Refactoring
             {
                 return;
             }
+
+            
 
             context.ReportDiagnostic(diagnostic);
         }

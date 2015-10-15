@@ -60,13 +60,26 @@ int Increment(int b, string c){ reture a = a+b + c.Length;}
 
 
         [Fact]
-        public async Task IgnoresWheMethodOverloaded()
+        public async Task IgnoresWhenMethodOverloaded()
         {
             const string test = @"public class A
         {
 
             A Increment() => new A();
             int Increment(int b) => b+ 2;
+        
+
+}";
+            await VerifyCSharpHasNoDiagnosticsAsync(test);
+        }
+
+        [Fact]
+        public async Task IgnoresWhenMethodAsync()
+        {
+            const string test = @"public class A
+        {
+
+            async Task<A> Increment() {return new A();}
         
 
 }";
@@ -151,6 +164,60 @@ int Increment() {return a++;}
         }
 
         [Fact]
+        public async Task FixReplacesOneMethodInAbstractClassWithProperty()
+        {
+            const string test = @"
+    using System;
+
+    namespace ConsoleApplication1
+    {
+        abstract class TypeName
+        {
+            public abstract int Foo();
+        }
+    }";
+
+            const string expected = @"
+    using System;
+
+    namespace ConsoleApplication1
+    {
+        abstract class TypeName
+        {
+            public abstract int Foo {get;}
+        }
+    }";
+            await VerifyCSharpFixAllAsync(test, expected);
+        }
+
+        [Fact]
+        public async Task FixReplacesOneMethodInInterfaceWithProperty()
+        {
+            const string test = @"
+    using System;
+
+    namespace ConsoleApplication1
+    {
+        interface TypeName
+        {
+            int Foo();
+        }
+    }";
+
+            const string expected = @"
+    using System;
+
+    namespace ConsoleApplication1
+    {
+        interface TypeName
+        {
+            int Foo {get;}
+        }
+    }";
+            await VerifyCSharpFixAllAsync(test, expected);
+        }
+
+        [Fact]
         public async Task FixReplacesExpressionBodiedMethodWithProperty()
         {
             const string test = @"
@@ -179,7 +246,6 @@ int Increment() {return a++;}
 
 
         //TODO
-        //No async conversions
         //Cannot change if overload in supertype/subtype
         //Change interface
         //Change references

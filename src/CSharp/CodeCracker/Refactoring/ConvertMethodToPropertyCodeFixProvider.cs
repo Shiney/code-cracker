@@ -54,16 +54,26 @@ namespace CodeCracker.CSharp.Refactoring
             {
                 var propertyWithoutBody = SyntaxFactory.PropertyDeclaration(method.ReturnType, method.Identifier).WithModifiers(method.Modifiers).WithAdditionalAnnotations(Formatter.Annotation);
                 PropertyDeclarationSyntax property;
-                property = method.ExpressionBody == null
-                    ? propertyWithoutBody.
+                if (method.ExpressionBody == null)
+                {
+                    var accessorDeclarationSyntax = SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, method.Body);
+                    if (method.Body == null)
+                    {
+                        accessorDeclarationSyntax = accessorDeclarationSyntax.WithSemicolonToken(semicolonToken);
+                    }
+                    property = propertyWithoutBody.
                         WithAccessorList(
                             SyntaxFactory.AccessorList(new SyntaxList<AccessorDeclarationSyntax>().Add
-                            (
-                                SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, method.Body)
+                                (
+                                    accessorDeclarationSyntax
                                 )
-                            )
-                        )
-                    : propertyWithoutBody.WithExpressionBody(method.ExpressionBody);
+                                )
+                        );
+                }
+                else
+                {
+                    property = propertyWithoutBody.WithExpressionBody(method.ExpressionBody);
+                }
                 newRoot = root.ReplaceNode(method, property.WithTriviaFrom(method));
             }
             else
