@@ -84,6 +84,7 @@
         ConsoleWriteLine = 95,
         ExtractClassToFile = 96,
         PreferAnyToCountGreaterThanZero = 99,
+        ConvertMethodToProperty = 103,
         NameOf_External = 108,
     }
 }

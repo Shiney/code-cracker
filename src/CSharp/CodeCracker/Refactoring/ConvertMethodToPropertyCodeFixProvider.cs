@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CodeCracker.CSharp.Usage;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
@@ -39,50 +40,85 @@ namespace CodeCracker.CSharp.Refactoring
             var method = (MethodDeclarationSyntax)root.FindNode(diagnosticSpan);
             var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
             var methodSymbol = semanticModel.GetDeclaredSymbol(method);
-            var methodClassName = methodSymbol.ContainingType.Name;
+            var foundDocument = false;
             var references = await SymbolFinder.FindReferencesAsync(methodSymbol, document.Project.Solution, cancellationToken).ConfigureAwait(false);
             var documentGroups = references.SelectMany(r => r.Locations).GroupBy(loc => loc.Document);
-            var newSolution = UpdateMainDocument(document, root, method, documentGroups);
-            return newSolution;
-        }
-
-        private static Solution UpdateMainDocument(Document document, SyntaxNode root, MethodDeclarationSyntax method, IEnumerable<IGrouping<Document, ReferenceLocation>> documentGroups)
-        {
-            var mainDocGroup = documentGroups.FirstOrDefault(dg => dg.Key.Equals(document));
-            SyntaxNode newRoot;
-            if (mainDocGroup == null)
+            var docs = new List<UnusedParametersCodeFixProvider.DocumentIdAndRoot>();
+            var replacement = PropertyToUse(method);
+            foreach (var documentGroup in documentGroups)
             {
-                var propertyWithoutBody = SyntaxFactory.PropertyDeclaration(method.ReturnType, method.Identifier).WithModifiers(method.Modifiers).WithAdditionalAnnotations(Formatter.Annotation);
-                PropertyDeclarationSyntax property;
-                if (method.ExpressionBody == null)
+                var referencingDocument = documentGroup.Key;
+                SyntaxNode locRoot;
+                SemanticModel locSemanticModel;
+                var replacingArgs = new Dictionary<SyntaxNode, SyntaxNode>();
+                if (referencingDocument.Equals(document))
                 {
-                    var accessorDeclarationSyntax = SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, method.Body);
-                    if (method.Body == null)
-                    {
-                        accessorDeclarationSyntax = accessorDeclarationSyntax.WithSemicolonToken(semicolonToken);
-                    }
-                    property = propertyWithoutBody.
-                        WithAccessorList(
-                            SyntaxFactory.AccessorList(new SyntaxList<AccessorDeclarationSyntax>().Add
-                                (
-                                    accessorDeclarationSyntax
-                                )
-                                )
-                        );
+                    locRoot = root;
+                    replacingArgs.Add(method, replacement);
+                    foundDocument = true;
                 }
                 else
                 {
-                    property = propertyWithoutBody.WithExpressionBody(method.ExpressionBody);
+                    locSemanticModel = await referencingDocument.GetSemanticModelAsync(cancellationToken);
+                    locRoot = await locSemanticModel.SyntaxTree.GetRootAsync(cancellationToken);
                 }
-                newRoot = root.ReplaceNode(method, property.WithTriviaFrom(method));
+                foreach (var loc in documentGroup)
+                {
+                    var methodIdentifier = locRoot.FindNode(loc.Location.SourceSpan);
+                    var invocation = methodIdentifier.Parent as InvocationExpressionSyntax ?? methodIdentifier.Parent.Parent as InvocationExpressionSyntax;
+
+                    if (invocation != null)
+                    {
+                        replacingArgs.Add(invocation, invocation.Expression.WithSameTriviaAs(invocation) );
+                    }
+
+                }
+                var newLocRoot = locRoot.ReplaceNodes(replacingArgs.Keys, (original, rewritten) => replacingArgs[original]);
+                docs.Add(new UnusedParametersCodeFixProvider.DocumentIdAndRoot { DocumentId = referencingDocument.Id, Root = newLocRoot });
+            }
+            if (!foundDocument)
+            {
+                var newRoot = root.ReplaceNode(method, replacement);
+                var newDocument = document.WithSyntaxRoot(newRoot);
+                docs.Add(new UnusedParametersCodeFixProvider.DocumentIdAndRoot { DocumentId = document.Id, Root = newRoot });
+            }
+
+            var newSolution = document.Project.Solution;
+            foreach (var doc in docs)
+            {
+                newSolution = newSolution.WithDocumentSyntaxRoot(doc.DocumentId, doc.Root);
+            }
+            return newSolution;
+        }
+
+        private static PropertyDeclarationSyntax PropertyToUse(MethodDeclarationSyntax method)
+        {
+            var propertyWithoutBody =
+                SyntaxFactory.PropertyDeclaration(method.ReturnType, method.Identifier)
+                    .WithModifiers(method.Modifiers)
+                    .WithAdditionalAnnotations(Formatter.Annotation);
+            PropertyDeclarationSyntax property;
+            if (method.ExpressionBody == null)
+            {
+                var accessorDeclarationSyntax = SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, method.Body);
+                if (method.Body == null)
+                {
+                    accessorDeclarationSyntax = accessorDeclarationSyntax.WithSemicolonToken(semicolonToken);
+                }
+                property = propertyWithoutBody.
+                    WithAccessorList(
+                        SyntaxFactory.AccessorList(new SyntaxList<AccessorDeclarationSyntax>().Add
+                            (
+                                accessorDeclarationSyntax
+                            )
+                            )
+                    );
             }
             else
             {
-                throw new NotImplementedException();
-
+                property = propertyWithoutBody.WithExpressionBody(method.ExpressionBody).WithSemicolonToken(semicolonToken);
             }
-            var newSolution = document.Project.Solution.WithDocumentSyntaxRoot(document.Id, newRoot);
-            return newSolution;
+            return property;
         }
     }
 }

@@ -227,7 +227,7 @@ int Increment() {return a++;}
     {
         class TypeName
         {
-            internal static int Foo() => return 9 * 7;
+            internal static int Foo() => 9 * 7;
         }
     }";
 
@@ -238,18 +238,70 @@ int Increment() {return a++;}
     {
         class TypeName
         {
-            internal static int Foo => return 9 * 7;
+            internal static int Foo => 9 * 7;
         }
     }";
             await VerifyCSharpFixAllAsync(test, expected);
         }
 
 
+        [Fact]
+        public async Task FixUpdatesReference()
+        {
+
+            const string test = @"
+    using System;
+
+    namespace ConsoleApplication1
+    {
+        class TypeName
+        {
+            internal static int Foo() => 9 * 7;
+            
+            int Main(bool b)
+            {
+                return Foo();
+            }
+        }
+
+        public class Prog
+        {
+            int Main(bool b)
+            {
+                return TypeName.Foo() + ConsoleApplication1.TypeName.Foo();
+            }
+        }
+    }";
+
+            const string expected = @"
+                using System;
+
+    namespace ConsoleApplication1
+    {
+        class TypeName
+        {
+            internal static int Foo => 9 * 7;
+
+            int Main(bool b)
+            {
+                return Foo;
+            }
+        }
+
+        public class Prog
+        {
+            int Main(bool b)
+            {
+                return TypeName.Foo + ConsoleApplication1.TypeName.Foo;
+            }
+        }
+    }";
+            await VerifyCSharpFixAllAsync(test, expected);
+
+
+        }
         //TODO
-        //Cannot change if overload in supertype/subtype
-        //Change interface
         //Change references
-        //Change interface/abstract and current? or don't support/
         //Reference as delegate should be changed.#
         //Change reference if used as delegate.
     }
